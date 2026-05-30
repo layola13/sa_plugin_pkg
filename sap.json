@@ -1,0 +1,39 @@
+{
+  "schema": "sa.plugin/1",
+  "name": "pkg",
+  "version": "0.1.0",
+  "source": {
+    "type": "local",
+    "path": "."
+  },
+  "abi": {
+    "plugin": 1,
+    "saasm": ">=0.4.0"
+  },
+  "artifacts": {
+    "linux-x86_64": {
+      "path": "zig-out/lib/libpkg.so"
+    }
+  },
+  "interfaces": {},
+  "skills": ["package.management"],
+  "permissions": {
+    "fs": [
+      { "op": "read", "path": "$PROJECT/**" },
+      { "op": "write", "path": "$PROJECT/**" },
+      { "op": "create", "path": "$PROJECT/**" }
+    ],
+    "net": [
+      { "url": "https://*", "methods": ["GET"] },
+      { "url": "http://localhost", "methods": ["GET"] }
+    ],
+    "env": ["HOME", "SA_*"],
+    "process": {
+      "spawn": true,
+      "exec": [
+        { "path": "/usr/bin/git", "args": ["*"] }
+      ]
+    }
+  },
+  "dependencies": {}
+}
