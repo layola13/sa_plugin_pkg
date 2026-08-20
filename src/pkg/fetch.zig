@@ -53,7 +53,7 @@ fn homeDir(allocator: std.mem.Allocator) ![]u8 {
 }
 
 fn vendorRoot(allocator: std.mem.Allocator, identity: []const u8) ![]u8 {
-    return try pathJoin(allocator, &.{ "sa_vendor", identity });
+    return try std.fmt.allocPrint(allocator, "sa_vendor/{s}", .{identity});
 }
 
 fn globalRoot(allocator: std.mem.Allocator, home: []const u8, identity: []const u8, ref: []const u8) ![]u8 {
@@ -155,6 +155,7 @@ fn copyTree(src_root: []const u8, dst_root: []const u8, allocator: std.mem.Alloc
 }
 
 fn setReadOnlyRecursive(root_path: []const u8, allocator: std.mem.Allocator) !void {
+    if (@import("builtin").os.tag == .windows) return;
     var root_dir = try std.fs.cwd().openDir(root_path, .{ .iterate = true });
     defer root_dir.close();
 
@@ -205,6 +206,14 @@ fn runGitClone(allocator: std.mem.Allocator, identity: []const u8, ref: []const 
         exec_argv[idx] = (try arena_alloc.dupeZ(u8, arg)).ptr;
     }
     const envp = (try std.process.createNullDelimitedEnvMap(arena_alloc, &env_map)).ptr;
+
+    if (@import("builtin").os.tag == .windows) {
+        var child = std.process.Child.init(argv.items, allocator);
+        child.env_map = &env_map;
+        const term = child.spawnAndWait() catch return error.SourceNotFound;
+        if (term.Exited != 0) return error.SourceNotFound;
+        return;
+    }
 
     const pid = try std.posix.fork();
     if (pid == 0) {
@@ -333,7 +342,7 @@ test "PkgMgr-Fetch-Smoke computes hash and does not execute package files" {
         \\echo executed > executed.marker
         \\
     );
-    try postinstall.chmod(0o755);
+    if (@import("builtin").os.tag != .windows) try postinstall.chmod(0o755);
     postinstall.close();
 
     const source_root = try tmp.dir.realpathAlloc(std.testing.allocator, "github.com/example/smoke");

@@ -13,6 +13,9 @@
   "artifacts": {
     "linux-x86_64": {
       "path": "zig-out/lib/libpkg.so"
+    },
+    "windows-x86_64": {
+      "path": "zig-out/bin/pkg.dll"
     }
   },
   "interfaces": {},
