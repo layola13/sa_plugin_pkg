@@ -1,5 +1,9 @@
 # sa_plugin_pkg
 
+> **Build requirement: Zig 0.17** — this plugin targets and is verified against **Zig 0.17.0**. Build and test with Zig 0.17; older toolchains such as 0.14.x are not supported.
+> 本插件需使用 **Zig 0.17** 编译与测试。
+
+
 > **SA 的包管理器**——对标 Rust `cargo` / `crates.io`、npm 的角色。
 > 这是 SA **面向大众的主入口**:普通用户主要通过 `sa pkg` 获取、审计、安装依赖。
 > 编译器本体与"编译器层插件"是给需要定制工具链的高级用户的;**大众路径以 pkg 为主**。
