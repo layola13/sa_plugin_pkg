@@ -68,7 +68,7 @@ fn emptyLockFile(allocator: std.mem.Allocator) !manifest.LockFile {
 }
 
 fn readProjectLock(allocator: std.mem.Allocator, path: []const u8) !manifest.LockFile {
-    const file = sio.cwd().openFile(path, .{ .mode = .read_only }) catch |err| switch (err) {
+    const file = sio.cwd().openFile(path, .{}) catch |err| switch (err) {
         error.FileNotFound => return try emptyLockFile(allocator),
         else => return err,
     };
@@ -277,11 +277,11 @@ fn expectLockEntryCount(path: []const u8, expected: usize) !manifest.LockFile {
 test "updateProjectLock creates a project-local lock and is idempotent" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\n" });
-    const pkg_root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\n" });
+    const pkg_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(pkg_root);
-    const project_root = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const project_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(project_root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "v1", pkg_root, &.{.io_write});
@@ -320,11 +320,11 @@ test "updateProjectLock creates a project-local lock and is idempotent" {
 test "updateProjectLock clears stale target hashes when source changes" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\n" });
-    const pkg_root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\n" });
+    const pkg_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(pkg_root);
-    const project_root = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const project_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(project_root);
 
     var first_report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "v1", pkg_root, &.{.io_write});
@@ -335,7 +335,7 @@ test "updateProjectLock clears stale target hashes when source changes" {
     defer wasm.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(u8, 2), wasm.target_count);
 
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\ncall @sys_time_now()\n" });
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_print(*MSG, 2)\ncall @sys_time_now()\n" });
     var changed_report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "v1", pkg_root, &.{ .io_write, .time_now });
     defer changed_report.deinit(std.testing.allocator);
     var updated = try updateProjectLock(std.testing.allocator, project_root, changed_report, hashArtifactBytes("native-v2"), .{ .target_key = "native" });
@@ -353,9 +353,9 @@ test "updateProjectLock clears stale target hashes when source changes" {
 test "updateProjectLock rejects global state paths" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "@main() -> i32:\nreturn 0\n" });
-    const pkg_root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "@main() -> i32:\nreturn 0\n" });
+    const pkg_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(pkg_root);
     var report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "v1", pkg_root, &.{});
     defer report.deinit(std.testing.allocator);

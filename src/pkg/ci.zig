@@ -82,9 +82,9 @@ test "ci detection treats every configured signal as CI" {
 test "ci dual track rejects source mismatch and unauthorized primitives" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "HEAD", root, &.{});
@@ -99,9 +99,9 @@ test "ci dual track rejects source mismatch and unauthorized primitives" {
 test "ci can taint granted high-risk packages only when explicitly allowed" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/example/pkg", "HEAD", root, &.{.net_tx});

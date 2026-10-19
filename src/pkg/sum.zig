@@ -241,16 +241,16 @@ test "sum flattens transitive dependency trees and detects tampering" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("sa_vendor/a/sa_vendor/b");
-    try tmp.dir.makePath("sa_vendor/b");
-    try tmp.dir.writeFile(.{ .sub_path = "sa_vendor/a/index.sa", .data = "@a() -> i32:\nreturn 1\n" });
-    try tmp.dir.writeFile(.{ .sub_path = "sa_vendor/b/index.sa", .data = "@b() -> i32:\nreturn 2\n" });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("sa_vendor/a/sa_vendor/b");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("sa_vendor/b");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "sa_vendor/a/index.sa", .data = "@a() -> i32:\nreturn 1\n" });
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "sa_vendor/b/index.sa", .data = "@b() -> i32:\nreturn 2\n" });
 
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(root);
-    const a_root = try tmp.dir.realpathAlloc(std.testing.allocator, "sa_vendor/a");
+    const a_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "sa_vendor/a");
     defer std.testing.allocator.free(a_root);
-    const b_root = try tmp.dir.realpathAlloc(std.testing.allocator, "sa_vendor/b");
+    const b_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "sa_vendor/b");
     defer std.testing.allocator.free(b_root);
 
     var b_report = try audit.auditPackage(std.testing.allocator, "b", "HEAD", b_root, &.{});
@@ -259,8 +259,8 @@ test "sum flattens transitive dependency trees and detects tampering" {
     const b_hex = std.fmt.bytesToHex(b_report.source_sha256, .lower);
     const nested_manifest = try std.fmt.allocPrint(std.testing.allocator, "require b @HEAD sha256:{s}\n", .{b_hex[0..]});
     defer std.testing.allocator.free(nested_manifest);
-    try tmp.dir.writeFile(.{ .sub_path = "sa_vendor/a/sa.mod", .data = nested_manifest });
-    try tmp.dir.copyFile("sa_vendor/b/index.sa", tmp.dir, "sa_vendor/a/sa_vendor/b/index.sa", .{});
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "sa_vendor/a/sa.mod", .data = nested_manifest });
+    try (sio.Dir{ .inner = tmp.dir }).copyFile("sa_vendor/b/index.sa", sio.Dir{ .inner = tmp.dir }, "sa_vendor/a/sa_vendor/b/index.sa", .{});
 
     var a_report = try audit.auditPackage(std.testing.allocator, "a", "HEAD", a_root, &.{});
     defer a_report.deinit(std.testing.allocator);
@@ -277,6 +277,6 @@ test "sum flattens transitive dependency trees and detects tampering" {
     try std.testing.expectEqual(@as(usize, 2), result.entry_count);
     try verifyProjectSum(std.testing.allocator, root, project_manifest);
 
-    try tmp.dir.writeFile(.{ .sub_path = "sa_vendor/a/sa_vendor/b/index.sa", .data = "@b() -> i32:\nreturn 3\n" });
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "sa_vendor/a/sa_vendor/b/index.sa", .data = "@b() -> i32:\nreturn 3\n" });
     try std.testing.expectError(error.UpstreamShaMismatch, verifyProjectSum(std.testing.allocator, root, project_manifest));
 }

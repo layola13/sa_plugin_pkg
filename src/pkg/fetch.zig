@@ -165,7 +165,7 @@ fn setReadOnlyRecursive(root_path: []const u8, allocator: std.mem.Allocator) !vo
     while (try walker.next()) |entry| {
         switch (entry.kind) {
             .file => {
-                var file = try entry.dir.openFile(sio.io(), entry.basename, .{ .mode = .read_only });
+                var file = try entry.dir.openFile(sio.io(), entry.basename, .{});
                 defer file.close(sio.io());
                 try file.setPermissions(sio.io(), .fromMode(0o444));
             },
@@ -281,14 +281,14 @@ test "fetch copies a local source tree into sa_vendor" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("github.com/example/pkg/src");
-    var src_file = try tmp.dir.createFile("github.com/example/pkg/src/main.sa", .{ .truncate = true });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("github.com/example/pkg/src");
+    var src_file = try (sio.Dir{ .inner = tmp.dir }).createFile("github.com/example/pkg/src/main.sa", .{ .truncate = true });
     defer src_file.close();
     try src_file.writeAll("@main() -> i32:\n    return 0\n");
 
     var old_cwd = try sio.cwd().openDir(".", .{});
     defer old_cwd.close();
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer old_cwd.setAsCwd() catch {};
 
     var result = try fetchPackage(std.testing.allocator, "github.com/example/pkg", "HEAD", .{});
@@ -296,16 +296,16 @@ test "fetch copies a local source tree into sa_vendor" {
 
     var copied = try sio.cwd().openDir(result.root, .{ .iterate = true });
     defer copied.close();
-    try copied.access("src/main.sa", .{ .mode = .read_only });
+    try copied.access("src/main.sa", .{});
 }
 
 test "PkgMgr-Fetch-Smoke computes hash and does not execute package files" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("github.com/example/smoke");
-    try tmp.dir.writeFile(.{ .sub_path = "github.com/example/smoke/index.sa", .data = "@main() -> i32:\nreturn 0\n" });
-    var postinstall = try tmp.dir.createFile("github.com/example/smoke/postinstall.sh", .{ .truncate = true });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("github.com/example/smoke");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "github.com/example/smoke/index.sa", .data = "@main() -> i32:\nreturn 0\n" });
+    var postinstall = try (sio.Dir{ .inner = tmp.dir }).createFile("github.com/example/smoke/postinstall.sh", .{ .truncate = true });
     try postinstall.writeAll(
         \\#!/bin/sh
         \\echo executed > executed.marker
@@ -314,37 +314,37 @@ test "PkgMgr-Fetch-Smoke computes hash and does not execute package files" {
     try postinstall.chmod(0o755);
     postinstall.close();
 
-    const source_root = try tmp.dir.realpathAlloc(std.testing.allocator, "github.com/example/smoke");
+    const source_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "github.com/example/smoke");
     defer std.testing.allocator.free(source_root);
     const expected_hash = try audit.hashPackageSource(std.testing.allocator, source_root);
 
     var old_cwd = try sio.cwd().openDir(".", .{});
     defer old_cwd.close();
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer old_cwd.setAsCwd() catch {};
 
     var result = try fetchPackage(std.testing.allocator, "github.com/example/smoke", "HEAD", .{});
     defer result.deinit(std.testing.allocator);
     try std.testing.expect(std.mem.eql(u8, expected_hash[0..], result.source_sha256[0..]));
-    try std.testing.expectError(error.FileNotFound, tmp.dir.access("executed.marker", .{ .mode = .read_only }));
+    try std.testing.expectError(error.FileNotFound, (sio.Dir{ .inner = tmp.dir }).access("executed.marker", .{}));
 
     const vendored_hash = try audit.hashPackageSource(std.testing.allocator, result.root);
     try std.testing.expect(std.mem.eql(u8, expected_hash[0..], vendored_hash[0..]));
-    try sio.cwd().access("sa_vendor/github.com/example/smoke/postinstall.sh", .{ .mode = .read_only });
+    try sio.cwd().access("sa_vendor/github.com/example/smoke/postinstall.sh", .{});
 }
 
 test "fetch rejects precompiled artifacts" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("github.com/example/bad");
-    var bad_file = try tmp.dir.createFile("github.com/example/bad/libfoo.so", .{ .truncate = true });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("github.com/example/bad");
+    var bad_file = try (sio.Dir{ .inner = tmp.dir }).createFile("github.com/example/bad/libfoo.so", .{ .truncate = true });
     defer bad_file.close();
     try bad_file.writeAll("x");
 
     var old_cwd = try sio.cwd().openDir(".", .{});
     defer old_cwd.close();
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer old_cwd.setAsCwd() catch {};
 
     try std.testing.expectError(error.PrecompiledArtifactRejected, fetchPackage(std.testing.allocator, "github.com/example/bad", "HEAD", .{}));
@@ -354,12 +354,12 @@ test "fetch offline reuses existing vendor without deleting it" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("sa_vendor/github.com/example/pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "sa_vendor/github.com/example/pkg/index.sa", .data = "@cached() -> i32:\nreturn 1\n" });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("sa_vendor/github.com/example/pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "sa_vendor/github.com/example/pkg/index.sa", .data = "@cached() -> i32:\nreturn 1\n" });
 
     var old_cwd = try sio.cwd().openDir(".", .{});
     defer old_cwd.close();
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer old_cwd.setAsCwd() catch {};
 
     var result = try fetchPackage(std.testing.allocator, "github.com/example/pkg", "HEAD", .{ .offline = true });
@@ -367,19 +367,19 @@ test "fetch offline reuses existing vendor without deleting it" {
     try std.testing.expectEqualStrings("sa_vendor/github.com/example/pkg", result.root);
     const expected_hash = try audit.hashPackageSource(std.testing.allocator, result.root);
     try std.testing.expect(std.mem.eql(u8, expected_hash[0..], result.source_sha256[0..]));
-    try sio.cwd().access("sa_vendor/github.com/example/pkg/index.sa", .{ .mode = .read_only });
+    try sio.cwd().access("sa_vendor/github.com/example/pkg/index.sa", .{});
 }
 
 test "fetch applies mirror rules before network fallback" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("mirror/github/org/pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "mirror/github/org/pkg/index.sa", .data = "@mirrored() -> i32:\nreturn 9\n" });
+    try (sio.Dir{ .inner = tmp.dir }).makePath("mirror/github/org/pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "mirror/github/org/pkg/index.sa", .data = "@mirrored() -> i32:\nreturn 9\n" });
 
     var old_cwd = try sio.cwd().openDir(".", .{});
     defer old_cwd.close();
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer old_cwd.setAsCwd() catch {};
 
     const rules = [_]manifest.MirrorRule{.{
@@ -388,5 +388,5 @@ test "fetch applies mirror rules before network fallback" {
     }};
     var result = try fetchPackage(std.testing.allocator, "github.com/org/pkg", "HEAD", .{ .mirror_rules = rules[0..] });
     defer result.deinit(std.testing.allocator);
-    try sio.cwd().access("sa_vendor/github.com/org/pkg/index.sa", .{ .mode = .read_only });
+    try sio.cwd().access("sa_vendor/github.com/org/pkg/index.sa", .{});
 }

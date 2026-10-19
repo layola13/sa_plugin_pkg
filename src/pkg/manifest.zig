@@ -898,7 +898,7 @@ test "lock parser preserves dependency blocks and target hashes" {
     defer out.deinit();
     try writeLock(&out.writer, lock_file);
 
-    var lock_file2 = try parseLock(std.testing.allocator, out.items);
+    var lock_file2 = try parseLock(std.testing.allocator, out.written());
     defer lock_file2.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 1), lock_file2.entries.len);
     try std.testing.expectEqualStrings(lock_file.entries[0].url, lock_file2.entries[0].url);
@@ -920,7 +920,7 @@ test "sum parser preserves depth and sha256" {
     defer out.deinit();
     try writeSum(&out.writer, sum_file);
 
-    var sum_file2 = try parseSum(std.testing.allocator, out.items);
+    var sum_file2 = try parseSum(std.testing.allocator, out.written());
     defer sum_file2.deinit(std.testing.allocator);
     try std.testing.expectEqual(@as(usize, 2), sum_file2.entries.len);
     try std.testing.expectEqual(@as(u32, 2), sum_file2.entries[1].depth);

@@ -119,9 +119,9 @@ pub fn confirmWithReaderWriter(
 test "confirm blocks high risk package until exact URL is typed" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/risky/pkg", "HEAD", root, &.{});
@@ -147,9 +147,9 @@ test "confirm blocks high risk package until exact URL is typed" {
 test "confirm rejects missing tty and auto approve bypasses" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/risky/pkg", "HEAD", root, &.{});

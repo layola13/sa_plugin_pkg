@@ -396,14 +396,14 @@ test "pkg install syncs a small project dependency through plugin command" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("app/deps/example/pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "app/deps/example/pkg/index.sa", .data = 
+    try (sio.Dir{ .inner = tmp.dir }).makePath("app/deps/example/pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "app/deps/example/pkg/index.sa", .data = 
         \\@pkg_value() -> i32:
         \\return 42
         \\
     });
 
-    const pkg_root = try tmp.dir.realpathAlloc(std.testing.allocator, "app/deps/example/pkg");
+    const pkg_root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "app/deps/example/pkg");
     defer std.testing.allocator.free(pkg_root);
     var report = try pkg_audit.auditPackage(std.testing.allocator, "deps/example/pkg", "HEAD", pkg_root, &.{});
     defer report.deinit(std.testing.allocator);
@@ -414,30 +414,30 @@ test "pkg install syncs a small project dependency through plugin command" {
         .{hash_hex[0..]},
     );
     defer std.testing.allocator.free(manifest_source);
-    try tmp.dir.writeFile(.{ .sub_path = "app/sa.mod", .data = manifest_source });
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "app/sa.mod", .data = manifest_source });
 
-    try tmp.dir.setAsCwd();
+    try (sio.Dir{ .inner = tmp.dir }).setAsCwd();
     defer original_cwd.setAsCwd() catch {};
-    var app_dir = try tmp.dir.openDir("app", .{});
+    var app_dir = try (sio.Dir{ .inner = tmp.dir }).openDir("app", .{});
     defer app_dir.close();
     try app_dir.setAsCwd();
 
-    var stdout_buffer = std.array_list.Managed(u8).init(std.testing.allocator);
+    var stdout_buffer: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer stdout_buffer.deinit();
-    var stderr_buffer = std.array_list.Managed(u8).init(std.testing.allocator);
+    var stderr_buffer: std.Io.Writer.Allocating = .init(std.testing.allocator);
     defer stderr_buffer.deinit();
 
     const code = try runPkgCommandImpl(
         &.{ .allocator = std.testing.allocator },
         &.{ "sa", "pkg", "install" },
-        stdout_buffer.writer().any(),
-        stderr_buffer.writer().any(),
+        &stdout_buffer.writer,
+        &stderr_buffer.writer,
     );
     try std.testing.expectEqual(@as(?u8, 0), code);
-    try std.testing.expect(std.mem.containsAtLeast(u8, stdout_buffer.items, 1, "sa_vendor/deps/example/pkg"));
-    try std.testing.expectEqual(@as(usize, 0), stderr_buffer.items.len);
-    try sio.cwd().access("sa_vendor/deps/example/pkg/index.sa", .{ .mode = .read_only });
-    try sio.cwd().access("sa.sum", .{ .mode = .read_only });
+    try std.testing.expect(std.mem.containsAtLeast(u8, stdout_buffer.written(), 1, "sa_vendor/deps/example/pkg"));
+    try std.testing.expectEqual(@as(usize, 0), stderr_buffer.written().len);
+    try sio.cwd().access("sa_vendor/deps/example/pkg/index.sa", .{});
+    try sio.cwd().access("sa.sum", .{});
 
     const sum_source = try sio.cwd().readFileAlloc(std.testing.allocator, "sa.sum", 1024 * 1024);
     defer std.testing.allocator.free(sum_source);

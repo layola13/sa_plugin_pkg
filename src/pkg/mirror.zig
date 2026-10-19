@@ -211,9 +211,9 @@ test "mirror rejects forbidden global config files" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("home/.sa");
-    try tmp.dir.writeFile(.{ .sub_path = "home/.sa/mirror.toml", .data = "github.com = mirror\n" });
-    const home = try tmp.dir.realpathAlloc(std.testing.allocator, "home");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("home/.sa");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "home/.sa/mirror.toml", .data = "github.com = mirror\n" });
+    const home = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "home");
     defer std.testing.allocator.free(home);
 
     try std.testing.expectError(error.ForbiddenGlobalConfig, rejectForbiddenHomeConfig(std.testing.allocator, home));
