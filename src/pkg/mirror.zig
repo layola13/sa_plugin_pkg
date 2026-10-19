@@ -1,4 +1,5 @@
 const std = @import("std");
+const sio = @import("sio");
 
 const manifest = @import("manifest.zig");
 
@@ -17,7 +18,7 @@ fn trim(text: []const u8) []const u8 {
 }
 
 fn globalConfigExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{ .mode = .read_only }) catch return false;
+    sio.cwd().access(path, .{}) catch return false;
     return true;
 }
 
@@ -32,7 +33,7 @@ fn rejectForbiddenHomeConfig(allocator: std.mem.Allocator, home: []const u8) !vo
 }
 
 pub fn rejectForbiddenGlobalConfig(allocator: std.mem.Allocator) !void {
-    if (std.process.getEnvVarOwned(allocator, "HOME")) |home| {
+    if (sio.getEnvVarOwned(allocator, "HOME")) |home| {
         defer allocator.free(home);
         try rejectForbiddenHomeConfig(allocator, home);
     } else |err| switch (err) {
@@ -40,7 +41,7 @@ pub fn rejectForbiddenGlobalConfig(allocator: std.mem.Allocator) !void {
         else => return err,
     }
 
-    var etc = std.fs.cwd().openDir("/etc/sa", .{ .iterate = true }) catch |err| switch (err) {
+    var etc = sio.cwd().openDir("/etc/sa", .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound, error.NotDir => return,
         else => return err,
     };
@@ -55,7 +56,7 @@ pub fn rejectForbiddenGlobalConfig(allocator: std.mem.Allocator) !void {
 
 fn appendRule(
     allocator: std.mem.Allocator,
-    rules: *std.ArrayList(manifest.MirrorRule),
+    rules: *std.array_list.Managed(manifest.MirrorRule),
     host: []const u8,
     rewrite_to: []const u8,
 ) !void {
@@ -94,7 +95,7 @@ pub fn loadProjectRules(
 ) !RuleList {
     try rejectForbiddenGlobalConfig(allocator);
 
-    var rules = std.ArrayList(manifest.MirrorRule).init(allocator);
+    var rules = std.array_list.Managed(manifest.MirrorRule).init(allocator);
     errdefer {
         for (rules.items) |*rule| rule.deinit(allocator);
         rules.deinit();
@@ -106,7 +107,7 @@ pub fn loadProjectRules(
 
     const env_path = try std.fs.path.join(allocator, &.{ project_root, ".sa_env" });
     defer allocator.free(env_path);
-    if (std.fs.cwd().readFileAlloc(allocator, env_path, 1024 * 1024)) |source| {
+    if (sio.cwd().readFileAlloc(allocator, env_path, 1024 * 1024)) |source| {
         defer allocator.free(source);
         var it = std.mem.splitScalar(u8, source, '\n');
         while (it.next()) |raw| {
@@ -121,7 +122,7 @@ pub fn loadProjectRules(
         else => return err,
     }
 
-    var env_map = try std.process.getEnvMap(allocator);
+    var env_map = try sio.getEnvMap(allocator);
     defer env_map.deinit();
     var it = env_map.iterator();
     while (it.next()) |entry| {
@@ -210,9 +211,9 @@ test "mirror rejects forbidden global config files" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
 
-    try tmp.dir.makePath("home/.sa");
-    try tmp.dir.writeFile(.{ .sub_path = "home/.sa/mirror.toml", .data = "github.com = mirror\n" });
-    const home = try tmp.dir.realpathAlloc(std.testing.allocator, "home");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("home/.sa");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "home/.sa/mirror.toml", .data = "github.com = mirror\n" });
+    const home = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "home");
     defer std.testing.allocator.free(home);
 
     try std.testing.expectError(error.ForbiddenGlobalConfig, rejectForbiddenHomeConfig(std.testing.allocator, home));

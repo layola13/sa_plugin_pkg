@@ -21,10 +21,10 @@ pub const Confirmation = struct {
 };
 
 pub const Session = struct {
-    confirmations: std.ArrayList(Confirmation),
+    confirmations: std.array_list.Managed(Confirmation),
 
     pub fn init(allocator: std.mem.Allocator) Session {
-        return .{ .confirmations = std.ArrayList(Confirmation).init(allocator) };
+        return .{ .confirmations = std.array_list.Managed(Confirmation).init(allocator) };
     }
 
     pub fn deinit(self: *Session) void {
@@ -119,9 +119,9 @@ pub fn confirmWithReaderWriter(
 test "confirm blocks high risk package until exact URL is typed" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/risky/pkg", "HEAD", root, &.{});
@@ -132,7 +132,7 @@ test "confirm blocks high risk package until exact URL is typed" {
     try std.testing.expectEqual(RiskState.blocked_risk, session.stateFor(report));
 
     var wrong_in = std.io.fixedBufferStream("github.com/other/pkg\n");
-    var out = std.ArrayList(u8).init(std.testing.allocator);
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
     defer out.deinit();
     try std.testing.expectError(
         error.BlockedRiskUnconfirmed,
@@ -147,9 +147,9 @@ test "confirm blocks high risk package until exact URL is typed" {
 test "confirm rejects missing tty and auto approve bypasses" {
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
-    try tmp.dir.makePath("pkg");
-    try tmp.dir.writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
-    const root = try tmp.dir.realpathAlloc(std.testing.allocator, "pkg");
+    try (sio.Dir{ .inner = tmp.dir }).makePath("pkg");
+    try (sio.Dir{ .inner = tmp.dir }).writeFile(.{ .sub_path = "pkg/index.sa", .data = "call @sys_net_tx(*BUF, 4)\n" });
+    const root = try (sio.Dir{ .inner = tmp.dir }).realpathAlloc(std.testing.allocator, "pkg");
     defer std.testing.allocator.free(root);
 
     var report = try audit.auditPackage(std.testing.allocator, "github.com/risky/pkg", "HEAD", root, &.{});
@@ -158,7 +158,7 @@ test "confirm rejects missing tty and auto approve bypasses" {
     var session = Session.init(std.testing.allocator);
     defer session.deinit();
     var input = std.io.fixedBufferStream("github.com/risky/pkg\n");
-    var out = std.ArrayList(u8).init(std.testing.allocator);
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
     defer out.deinit();
 
     try std.testing.expectError(
