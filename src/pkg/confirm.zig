@@ -21,10 +21,10 @@ pub const Confirmation = struct {
 };
 
 pub const Session = struct {
-    confirmations: std.ArrayList(Confirmation),
+    confirmations: std.array_list.Managed(Confirmation),
 
     pub fn init(allocator: std.mem.Allocator) Session {
-        return .{ .confirmations = std.ArrayList(Confirmation).init(allocator) };
+        return .{ .confirmations = std.array_list.Managed(Confirmation).init(allocator) };
     }
 
     pub fn deinit(self: *Session) void {
@@ -132,7 +132,7 @@ test "confirm blocks high risk package until exact URL is typed" {
     try std.testing.expectEqual(RiskState.blocked_risk, session.stateFor(report));
 
     var wrong_in = std.io.fixedBufferStream("github.com/other/pkg\n");
-    var out = std.ArrayList(u8).init(std.testing.allocator);
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
     defer out.deinit();
     try std.testing.expectError(
         error.BlockedRiskUnconfirmed,
@@ -158,7 +158,7 @@ test "confirm rejects missing tty and auto approve bypasses" {
     var session = Session.init(std.testing.allocator);
     defer session.deinit();
     var input = std.io.fixedBufferStream("github.com/risky/pkg\n");
-    var out = std.ArrayList(u8).init(std.testing.allocator);
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
     defer out.deinit();
 
     try std.testing.expectError(

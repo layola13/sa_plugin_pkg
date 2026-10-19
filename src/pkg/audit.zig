@@ -1,4 +1,5 @@
 const std = @import("std");
+const sio = @import("sio");
 const manifest = @import("manifest.zig");
 
 pub const RiskLevel = enum {
@@ -130,7 +131,7 @@ pub fn capabilityForPrimitive(name: []const u8) ?manifest.Capability {
 
 fn scanSource(
     allocator: std.mem.Allocator,
-    primitives: *std.ArrayList(PrimitiveUse),
+    primitives: *std.array_list.Managed(PrimitiveUse),
     path: []const u8,
     source: []const u8,
     grants: []const manifest.Capability,
@@ -258,10 +259,10 @@ fn directPathLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
 }
 
 fn hashFlatPackageSource(allocator: std.mem.Allocator, root_dir: []const u8) !?[32]u8 {
-    var root = try std.fs.cwd().openDir(root_dir, .{ .iterate = true });
+    var root = try sio.cwd().openDir(root_dir, .{ .iterate = true });
     defer root.close();
 
-    var files = std.ArrayList([]u8).init(allocator);
+    var files = std.array_list.Managed([]u8).init(allocator);
     defer {
         for (files.items) |path| allocator.free(path);
         files.deinit();
@@ -297,10 +298,10 @@ fn hashFlatPackageSource(allocator: std.mem.Allocator, root_dir: []const u8) !?[
 }
 
 fn collectPackageFiles(allocator: std.mem.Allocator, root_dir: []const u8) ![]HashItem {
-    var root = try std.fs.cwd().openDir(root_dir, .{ .iterate = true });
+    var root = try sio.cwd().openDir(root_dir, .{ .iterate = true });
     defer root.close();
 
-    var files = std.ArrayList(HashItem).init(allocator);
+    var files = std.array_list.Managed(HashItem).init(allocator);
     errdefer {
         for (files.items) |item| {
             allocator.free(item.rel_path);
@@ -344,7 +345,7 @@ fn updateSourceHash(hasher: *std.crypto.hash.sha2.Sha256, rel_path: []const u8, 
     hasher.update(&[_]u8{0});
 }
 
-fn updateSourceHashFromFile(hasher: *std.crypto.hash.sha2.Sha256, rel_path: []const u8, file: std.fs.File) !void {
+fn updateSourceHashFromFile(hasher: *std.crypto.hash.sha2.Sha256, rel_path: []const u8, file: sio.File) !void {
     var buffer: [8192]u8 = undefined;
     hasher.update(rel_path);
     hasher.update(&[_]u8{0});
@@ -366,7 +367,7 @@ pub fn hashPackageSource(allocator: std.mem.Allocator, root_dir: []const u8) ![3
 
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     for (files) |item| {
-        var file = try std.fs.cwd().openFile(item.full_path, .{ .mode = .read_only });
+        var file = try sio.cwd().openFile(item.full_path, .{ .mode = .read_only });
         defer file.close();
         try updateSourceHashFromFile(&hasher, item.rel_path, file);
     }
@@ -386,7 +387,7 @@ pub fn auditPackage(
     const files = try collectPackageFiles(allocator, root_dir);
     defer freePackageFiles(allocator, files);
 
-    var primitives = std.ArrayList(PrimitiveUse).init(allocator);
+    var primitives = std.array_list.Managed(PrimitiveUse).init(allocator);
     errdefer {
         for (primitives.items) |*primitive| primitive.deinit(allocator);
         primitives.deinit();
@@ -394,7 +395,7 @@ pub fn auditPackage(
 
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     for (files) |item| {
-        const bytes = try std.fs.cwd().readFileAlloc(allocator, item.full_path, 16 * 1024 * 1024);
+        const bytes = try sio.cwd().readFileAlloc(allocator, item.full_path, 16 * 1024 * 1024);
         defer allocator.free(bytes);
         updateSourceHash(&hasher, item.rel_path, bytes);
         if (isSourceFile(item.rel_path)) try scanSource(allocator, &primitives, item.rel_path, bytes, grants);
@@ -436,13 +437,13 @@ fn writeGrants(writer: anytype, grants: []const manifest.Capability) !void {
     try writer.writeByte(']');
 }
 
-fn appendMissingCapability(list: *std.ArrayList(manifest.Capability), cap: manifest.Capability) !void {
+fn appendMissingCapability(list: *std.array_list.Managed(manifest.Capability), cap: manifest.Capability) !void {
     if (containsCapability(list.items, cap)) return;
     try list.append(cap);
 }
 
 fn missingCapabilities(allocator: std.mem.Allocator, report: AuditReport) ![]manifest.Capability {
-    var missing = std.ArrayList(manifest.Capability).init(allocator);
+    var missing = std.array_list.Managed(manifest.Capability).init(allocator);
     errdefer missing.deinit();
     for (report.primitives) |primitive| {
         if (primitive.granted) continue;
@@ -633,7 +634,7 @@ test "audit flags ungranted network primitives and ignores strings/comments" {
     try std.testing.expectEqual(manifest.Capability.net_tx, report.primitives[0].capability.?);
     try std.testing.expect(!report.primitives[0].granted);
 
-    var out = std.ArrayList(u8).init(std.testing.allocator);
+    var out = std.array_list.Managed(u8).init(std.testing.allocator);
     defer out.deinit();
     try writeJsonReport(out.writer(), report);
     try std.testing.expect(std.mem.containsAtLeast(u8, out.items, 1, "\"risk\":\"HIGH RISK\""));

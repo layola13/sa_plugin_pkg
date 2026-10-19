@@ -1,4 +1,5 @@
 const std = @import("std");
+const sio = @import("sio");
 const plugin_api = @import("plugin_api");
 const helpers = @import("plugin_helpers.zig");
 
@@ -52,7 +53,7 @@ fn isPkgCliError(err: anyerror) bool {
     };
 }
 
-fn writePkgCliError(writer: std.io.AnyWriter, argv: []const []const u8, err: anyerror) !void {
+fn writePkgCliError(writer: *std.Io.Writer, argv: []const []const u8, err: anyerror) !void {
     const sub = if (argv.len >= 3) argv[2] else "";
     const message = switch (err) {
         error.MissingSourcePath => "missing required package operand",
@@ -122,19 +123,19 @@ fn parseFetchLikeArgs(args: []const []const u8) !FetchLikeArgs {
 }
 
 fn loadSource(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    var file = try std.fs.cwd().openFile(path, .{});
+    var file = try sio.cwd().openFile(path, .{});
     defer file.close();
     return try file.readToEndAlloc(allocator, 16 * 1024 * 1024);
 }
 
-fn installManifestDependencies(allocator: std.mem.Allocator, options: pkg_fetch.FetchOptions, stdout: std.io.AnyWriter) !u8 {
+fn installManifestDependencies(allocator: std.mem.Allocator, options: pkg_fetch.FetchOptions, stdout: *std.Io.Writer) !u8 {
     const source = try loadSource(allocator, "sa.mod");
     defer allocator.free(source);
 
     var project_manifest = try manifest.parseManifestWithFile(allocator, source, "sa.mod");
     defer project_manifest.deinit(allocator);
 
-    const project_root = try std.fs.cwd().realpathAlloc(allocator, ".");
+    const project_root = try sio.cwd().realpathAlloc(allocator, ".");
     defer allocator.free(project_root);
 
     var mirror_rules = try pkg_mirror.loadProjectRules(allocator, project_root, project_manifest.mirrors);
@@ -154,7 +155,7 @@ fn installManifestDependencies(allocator: std.mem.Allocator, options: pkg_fetch.
     return 0;
 }
 
-fn executeInstall(allocator: std.mem.Allocator, args: []const []const u8, stdout: std.io.AnyWriter) !u8 {
+fn executeInstall(allocator: std.mem.Allocator, args: []const []const u8, stdout: *std.Io.Writer) !u8 {
     const parsed = try parseFetchLikeArgs(args);
     if (parsed.identity) |identity| {
         var result = try pkg_fetch.fetchPackage(allocator, identity, parsed.ref, parsed.options);
@@ -165,7 +166,7 @@ fn executeInstall(allocator: std.mem.Allocator, args: []const []const u8, stdout
     return try installManifestDependencies(allocator, parsed.options, stdout);
 }
 
-fn executeFetch(allocator: std.mem.Allocator, args: []const []const u8, stdout: std.io.AnyWriter) !u8 {
+fn executeFetch(allocator: std.mem.Allocator, args: []const []const u8, stdout: *std.Io.Writer) !u8 {
     const parsed = try parseFetchLikeArgs(args);
     const identity = parsed.identity orelse return try installManifestDependencies(allocator, parsed.options, stdout);
     var result = try pkg_fetch.fetchPackage(allocator, identity, parsed.ref, parsed.options);
@@ -229,19 +230,19 @@ fn parseAuditArgs(args: []const []const u8, json_mode: bool) !AuditArgs {
 }
 
 fn dirExists(path: []const u8) bool {
-    var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch return false;
+    var dir = sio.cwd().openDir(path, .{ .iterate = true }) catch return false;
     dir.close();
     return true;
 }
 
 fn resolveAuditRoot(allocator: std.mem.Allocator, identity: []const u8, ref: []const u8) ![]u8 {
-    if (dirExists(identity)) return try std.fs.cwd().realpathAlloc(allocator, identity);
+    if (dirExists(identity)) return try sio.cwd().realpathAlloc(allocator, identity);
     const local_root = try std.fs.path.join(allocator, &.{ "sa_vendor", identity });
     errdefer allocator.free(local_root);
     if (dirExists(local_root)) return local_root;
     allocator.free(local_root);
 
-    const home = try std.process.getEnvVarOwned(allocator, "HOME");
+    const home = try sio.getEnvVarOwned(allocator, "HOME");
     defer allocator.free(home);
     const leaf = try std.fmt.allocPrint(allocator, "{s}@{s}", .{ identity, ref });
     defer allocator.free(leaf);
@@ -251,12 +252,12 @@ fn resolveAuditRoot(allocator: std.mem.Allocator, identity: []const u8, ref: []c
     return error.PackageNotResolved;
 }
 
-fn writeHexString(writer: std.io.AnyWriter, hash: [32]u8) !void {
+fn writeHexString(writer: *std.Io.Writer, hash: [32]u8) !void {
     const hex = std.fmt.bytesToHex(hash, .lower);
     try writer.print("{s}", .{hex[0..]});
 }
 
-fn writeAuditLockJson(writer: std.io.AnyWriter, report: pkg_audit.AuditReport, update: pkg_lock.UpdateResult) !void {
+fn writeAuditLockJson(writer: *std.Io.Writer, report: pkg_audit.AuditReport, update: pkg_lock.UpdateResult) !void {
     try writer.writeAll("{\"package\":");
     try writeJsonString(writer, report.package_url);
     try writer.writeAll(",\"ref\":");
@@ -275,7 +276,7 @@ fn writeAuditLockJson(writer: std.io.AnyWriter, report: pkg_audit.AuditReport, u
     });
 }
 
-fn writeJsonString(writer: std.io.AnyWriter, text: []const u8) !void {
+fn writeJsonString(writer: *std.Io.Writer, text: []const u8) !void {
     try writer.writeByte('"');
     for (text) |c| {
         switch (c) {
@@ -294,7 +295,7 @@ fn writeJsonString(writer: std.io.AnyWriter, text: []const u8) !void {
     try writer.writeByte('"');
 }
 
-fn executeAudit(ctx: *const plugin_api.Context, args: []const []const u8, stdout: std.io.AnyWriter) !u8 {
+fn executeAudit(ctx: *const plugin_api.Context, args: []const []const u8, stdout: *std.Io.Writer) !u8 {
     const allocator = std.heap.c_allocator;
     const parsed = try parseAuditArgs(args, ctx.json_mode);
     const identity = parsed.identity orelse return error.MissingSourcePath;
@@ -329,7 +330,7 @@ fn executeAudit(ctx: *const plugin_api.Context, args: []const []const u8, stdout
     return 0;
 }
 
-fn runPkgCommandImpl(ctx: *const plugin_api.Context, argv: []const []const u8, stdout: std.io.AnyWriter, stderr: std.io.AnyWriter) anyerror!?u8 {
+fn runPkgCommandImpl(ctx: *const plugin_api.Context, argv: []const []const u8, stdout: *std.Io.Writer, stderr: *std.Io.Writer) anyerror!?u8 {
     _ = stderr;
     if (argv.len < 2) return null;
     if (!std.mem.eql(u8, argv[1], "pkg")) return null;
@@ -349,10 +350,10 @@ fn runPkgCommandAbi(ctx: *const plugin_api.Context, argv: [*]const [*:0]const u8
     const args = helpers.cArgvToSlice(argv, argv_len, allocator) catch return @intFromEnum(plugin_api.AbiStatus.failed);
     defer allocator.free(args);
 
-    var stdout_storage: helpers.StreamWriterCtx = undefined;
-    var stderr_storage: helpers.StreamWriterCtx = undefined;
-    const stdout_writer = helpers.makeAnyWriter(stdout, &stdout_storage) orelse return @intFromEnum(plugin_api.AbiStatus.failed);
-    const stderr_writer = helpers.makeAnyWriter(stderr, &stderr_storage) orelse return @intFromEnum(plugin_api.AbiStatus.failed);
+    var stdout_storage: helpers.HostWriter = undefined;
+    var stderr_storage: helpers.HostWriter = undefined;
+    const stdout_writer = helpers.makeHostWriter(stdout, &stdout_storage) orelse return @intFromEnum(plugin_api.AbiStatus.failed);
+    const stderr_writer = helpers.makeHostWriter(stderr, &stderr_storage) orelse return @intFromEnum(plugin_api.AbiStatus.failed);
 
     const result = runPkgCommandImpl(ctx, args, stdout_writer, stderr_writer) catch |err| {
         if (!isPkgCliError(err)) return @intFromEnum(plugin_api.AbiStatus.failed);
@@ -390,7 +391,7 @@ test "pkg plugin exports runtime descriptor" {
 }
 
 test "pkg install syncs a small project dependency through plugin command" {
-    var original_cwd = try std.fs.cwd().openDir(".", .{});
+    var original_cwd = try sio.cwd().openDir(".", .{});
     defer original_cwd.close();
     var tmp = std.testing.tmpDir(.{ .iterate = true });
     defer tmp.cleanup();
@@ -421,9 +422,9 @@ test "pkg install syncs a small project dependency through plugin command" {
     defer app_dir.close();
     try app_dir.setAsCwd();
 
-    var stdout_buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var stdout_buffer = std.array_list.Managed(u8).init(std.testing.allocator);
     defer stdout_buffer.deinit();
-    var stderr_buffer = std.ArrayList(u8).init(std.testing.allocator);
+    var stderr_buffer = std.array_list.Managed(u8).init(std.testing.allocator);
     defer stderr_buffer.deinit();
 
     const code = try runPkgCommandImpl(
@@ -435,10 +436,10 @@ test "pkg install syncs a small project dependency through plugin command" {
     try std.testing.expectEqual(@as(?u8, 0), code);
     try std.testing.expect(std.mem.containsAtLeast(u8, stdout_buffer.items, 1, "sa_vendor/deps/example/pkg"));
     try std.testing.expectEqual(@as(usize, 0), stderr_buffer.items.len);
-    try std.fs.cwd().access("sa_vendor/deps/example/pkg/index.sa", .{ .mode = .read_only });
-    try std.fs.cwd().access("sa.sum", .{ .mode = .read_only });
+    try sio.cwd().access("sa_vendor/deps/example/pkg/index.sa", .{ .mode = .read_only });
+    try sio.cwd().access("sa.sum", .{ .mode = .read_only });
 
-    const sum_source = try std.fs.cwd().readFileAlloc(std.testing.allocator, "sa.sum", 1024 * 1024);
+    const sum_source = try sio.cwd().readFileAlloc(std.testing.allocator, "sa.sum", 1024 * 1024);
     defer std.testing.allocator.free(sum_source);
     try std.testing.expect(std.mem.containsAtLeast(u8, sum_source, 1, "deps/example/pkg @HEAD sha256:"));
 }

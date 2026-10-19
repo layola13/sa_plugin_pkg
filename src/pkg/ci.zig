@@ -1,4 +1,5 @@
 const std = @import("std");
+const sio = @import("sio");
 
 const audit = @import("audit.zig");
 
@@ -18,7 +19,7 @@ pub const VerifyStatus = enum {
 };
 
 fn boolEnv(name: []const u8) bool {
-    const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+    const value = sio.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
     defer std.heap.page_allocator.free(value);
     return value.len != 0 and
         !std.mem.eql(u8, value, "0") and

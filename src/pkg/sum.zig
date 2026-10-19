@@ -1,4 +1,5 @@
 const std = @import("std");
+const sio = @import("sio");
 
 const audit = @import("audit.zig");
 const manifest = @import("manifest.zig");
@@ -15,7 +16,7 @@ pub const UpdateResult = struct {
 };
 
 fn sumPath(allocator: std.mem.Allocator, project_root: []const u8) ![]u8 {
-    const root = try std.fs.cwd().realpathAlloc(allocator, project_root);
+    const root = try sio.cwd().realpathAlloc(allocator, project_root);
     defer allocator.free(root);
     return try std.fs.path.join(allocator, &.{ root, "sa.sum" });
 }
@@ -26,7 +27,7 @@ fn packageVendorRoot(allocator: std.mem.Allocator, base_root: []const u8, url: [
 
 fn packageRootForRequire(allocator: std.mem.Allocator, base_root: []const u8, entry: manifest.RequireEntry) ![]u8 {
     if (std.fs.path.isAbsolute(entry.url)) {
-        if (std.fs.cwd().openDir(entry.url, .{ .iterate = true })) |dir| {
+        if (sio.cwd().openDir(entry.url, .{ .iterate = true })) |dir| {
             var owned = dir;
             owned.close();
             return try allocator.dupe(u8, entry.url);
@@ -37,7 +38,7 @@ fn packageRootForRequire(allocator: std.mem.Allocator, base_root: []const u8, en
 
     const vendored = try packageVendorRoot(allocator, base_root, entry.url);
     errdefer allocator.free(vendored);
-    if (std.fs.cwd().openDir(vendored, .{ .iterate = true })) |dir| {
+    if (sio.cwd().openDir(vendored, .{ .iterate = true })) |dir| {
         var owned = dir;
         owned.close();
         return vendored;
@@ -46,7 +47,7 @@ fn packageRootForRequire(allocator: std.mem.Allocator, base_root: []const u8, en
 
     const local = try std.fs.path.join(allocator, &.{ base_root, entry.url });
     errdefer allocator.free(local);
-    if (std.fs.cwd().openDir(local, .{ .iterate = true })) |dir| {
+    if (sio.cwd().openDir(local, .{ .iterate = true })) |dir| {
         var owned = dir;
         owned.close();
         return local;
@@ -59,7 +60,7 @@ fn packageRootForRequire(allocator: std.mem.Allocator, base_root: []const u8, en
 
 fn appendOrCheckEntry(
     allocator: std.mem.Allocator,
-    entries: *std.ArrayList(manifest.SumEntry),
+    entries: *std.array_list.Managed(manifest.SumEntry),
     url: []const u8,
     ref: []const u8,
     source_sha256: [32]u8,
@@ -84,7 +85,7 @@ fn appendOrCheckEntry(
 fn readNestedManifest(allocator: std.mem.Allocator, root: []const u8) !?manifest.Manifest {
     const path = try std.fs.path.join(allocator, &.{ root, "sa.mod" });
     defer allocator.free(path);
-    const source = std.fs.cwd().readFileAlloc(allocator, path, 16 * 1024 * 1024) catch |err| switch (err) {
+    const source = sio.cwd().readFileAlloc(allocator, path, 16 * 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => return err,
     };
@@ -94,7 +95,7 @@ fn readNestedManifest(allocator: std.mem.Allocator, root: []const u8) !?manifest
 
 fn collectRequire(
     allocator: std.mem.Allocator,
-    entries: *std.ArrayList(manifest.SumEntry),
+    entries: *std.array_list.Managed(manifest.SumEntry),
     base_root: []const u8,
     entry: manifest.RequireEntry,
     depth: u32,
@@ -136,7 +137,7 @@ pub fn buildFromManifest(
     project_root: []const u8,
     project_manifest: manifest.Manifest,
 ) !manifest.SumFile {
-    var entries = std.ArrayList(manifest.SumEntry).init(allocator);
+    var entries = std.array_list.Managed(manifest.SumEntry).init(allocator);
     errdefer {
         for (entries.items) |*entry| entry.deinit(allocator);
         entries.deinit();
@@ -151,7 +152,7 @@ pub fn buildFromManifest(
 }
 
 fn readProjectSum(allocator: std.mem.Allocator, path: []const u8) !?manifest.SumFile {
-    const source = std.fs.cwd().readFileAlloc(allocator, path, 16 * 1024 * 1024) catch |err| switch (err) {
+    const source = sio.cwd().readFileAlloc(allocator, path, 16 * 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return null,
         else => return err,
     };
@@ -171,33 +172,33 @@ fn sameSum(lhs: manifest.SumFile, rhs: manifest.SumFile) bool {
 }
 
 fn writeAtomic(allocator: std.mem.Allocator, path: []const u8, sum_file: manifest.SumFile) !void {
-    var out = std.ArrayList(u8).init(allocator);
+    var out: std.Io.Writer.Allocating = .init(allocator);
     defer out.deinit();
-    try manifest.writeSum(out.writer(), sum_file);
+    try manifest.writeSum(&out.writer, sum_file);
 
     if (std.fs.path.dirname(path)) |parent| {
-        if (parent.len != 0) try std.fs.cwd().makePath(parent);
+        if (parent.len != 0) try sio.cwd().makePath(parent);
     }
 
     var random: [8]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    std.Io.random(sio.io(), &random);
     const suffix = std.fmt.bytesToHex(random, .lower);
     const tmp = try std.fmt.allocPrint(allocator, "{s}.tmp.{s}", .{ path, suffix[0..] });
     defer allocator.free(tmp);
-    errdefer std.fs.cwd().deleteFile(tmp) catch {};
+    errdefer sio.cwd().deleteFile(tmp) catch {};
 
-    var file = try std.fs.cwd().createFile(tmp, .{ .truncate = true });
+    var file = try sio.cwd().createFile(tmp, .{ .truncate = true });
     var file_open = true;
     errdefer if (file_open) file.close();
-    try file.writeAll(out.items);
+    try file.writeAll(out.written());
     try file.sync();
     file.close();
     file_open = false;
 
     if (std.fs.path.isAbsolute(path)) {
-        try std.fs.renameAbsolute(tmp, path);
+        try sio.renameAbsolute(tmp, path);
     } else {
-        try std.fs.cwd().rename(tmp, path);
+        try sio.cwd().rename(tmp, sio.cwd(), path);
     }
 }
 
